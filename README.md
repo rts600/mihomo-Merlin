@@ -1,101 +1,29 @@
-<h1 align="center">
-  <img src="Meta.png" alt="Meta Kennel" width="200">
-  <br>Meta Kernel<br>
-</h1>
+## mihomo for router only
 
-<h3 align="center">Another Mihomo Kernel.</h3>
+说明：
 
-<p align="center">
-  <a href="https://goreportcard.com/report/github.com/MetaCubeX/mihomo">
-    <img src="https://goreportcard.com/badge/github.com/MetaCubeX/mihomo?style=flat-square">
-  </a>
-  <img src="https://img.shields.io/github/go-mod/go-version/MetaCubeX/mihomo/Alpha?style=flat-square">
-  <a href="https://github.com/MetaCubeX/mihomo/releases">
-    <img src="https://img.shields.io/github/release/MetaCubeX/mihomo/all.svg?style=flat-square">
-  </a>
-  <a href="https://github.com/MetaCubeX/mihomo">
-    <img src="https://img.shields.io/badge/release-Meta-00b4f0?style=flat-square">
-  </a>
-</p>
+1. with_gvisor (GVisor 网络栈模块)
+当前状态：❌ 构建中被剔除
+功能：集成由 Google 开发的 GVisor 用户态协议栈。它主要用于接管基于 TUN 的底层流量。
+路由器用途：极低。路由器通常使用内核层面的 iptables（Tproxy / Redirect）。GVisor非常吃CPU和内存，且体积巨大。
 
-## Features
 
-- Local HTTP/HTTPS/SOCKS server with authentication support
-- VMess, VLESS, Shadowsocks, Trojan, Snell, TUIC, Hysteria protocol support
-- Built-in DNS server that aims to minimize DNS pollution attack impact, supports DoH/DoT upstream and fake IP.
-- Rules based off domains, GEOIP, IPCIDR or Process to forward packets to different nodes
-- Remote groups allow users to implement powerful rules. Supports automatic fallback, load balancing or auto select node
-  based off latency
-- Remote providers, allowing users to get node lists remotely instead of hard-coding in config
-- Netfilter TCP redirecting. Deploy Mihomo on your Internet gateway with `iptables`.
-- Comprehensive HTTP RESTful API controller
+2. no_tailscale (Tailscale 节点模块)
+当前状态：❌ 构建中被剔除
+功能：将 Mihomo 直接注册为 Tailscale 虚拟局域网中的一个节点，支持走 Tailscale 的专属内网协议。
+路由器用途：极低。路由器上的代理主要是用来科学上网，如果需要 Tailscale，通常会直接在路由器上安装官方的 Tailscale 插件，而不是让代理软件去兼职处理。
 
-## Dashboard
+3. no_fake_tcp (Fake TCP 伪装模块)
+当前状态：❌ 构建中被剔除
+功能：用来将代理的底层 UDP 数据包强行套上 TCP 的包头，从而骗过国内宽带运营商针对 UDP 协议的限速或丢包（QoS）。
+路由器用途：较低。绝大多数科学上网协议（Vmess, Trojan, SS）默认就是走常规 TCP 或者像 Hysteria/TUIC 等有自身抗封锁机制的 UDP。路由器用户极少会用到原生的 Fake TCP 功能。
 
-A web dashboard with first-class support for this project has been created; it can be checked out at [metacubexd](https://github.com/MetaCubeX/metacubexd).
+4. cmfa (Android 安卓专属模块)
+当前状态：❌ 构建中被剔除
+功能：Clash Meta For Android 的缩写。包含为了适配安卓系统的 VPN Service、后台保活、安卓专属界面通讯等代码。
+路由器用途：完全无用。这是专为安卓手机 App 准备的。
 
-## Configration example
-
-Configuration example is located at [/docs/config.yaml](https://github.com/MetaCubeX/mihomo/blob/Alpha/docs/config.yaml).
-
-## Docs
-
-Documentation can be found in [mihomo Docs](https://wiki.metacubex.one/).
-
-## For development
-
-Requirements:
-[Go 1.20 or newer](https://go.dev/dl/)
-
-Build mihomo:
-
-```shell
-git clone https://github.com/MetaCubeX/mihomo.git
-cd mihomo && go mod download
-go build
-```
-
-Set go proxy if a connection to GitHub is not possible:
-
-```shell
-go env -w GOPROXY=https://goproxy.io,direct
-```
-
-Build with gvisor tun stack:
-
-```shell
-go build -tags with_gvisor
-```
-
-### IPTABLES configuration
-
-Work on Linux OS which supported `iptables`
-
-```yaml
-# Enable the TPROXY listener
-tproxy-port: 9898
-
-iptables:
-  enable: true # default is false
-  inbound-interface: eth0 # detect the inbound interface, default is 'lo'
-```
-
-## Debugging
-
-Check [wiki](https://wiki.metacubex.one/api/#debug) to get an instruction on using debug
-API.
-
-## Credits
-
-- [Dreamacro/clash](https://github.com/Dreamacro/clash)
-- [SagerNet/sing-box](https://github.com/SagerNet/sing-box)
-- [riobard/go-shadowsocks2](https://github.com/riobard/go-shadowsocks2)
-- [v2ray/v2ray-core](https://github.com/v2ray/v2ray-core)
-- [WireGuard/wireguard-go](https://github.com/WireGuard/wireguard-go)
-- [yaling888/clash-plus-pro](https://github.com/yaling888/clash)
-
-## License
-
-This software is released under the GPL-3.0 license.
-
-**In addition, any downstream projects not affiliated with `MetaCubeX` shall not contain the word `mihomo` in their names.**
+5. with_low_memory (低内存优化模块)
+当前状态：✅ 构建中被强制启用。
+功能：这是用来做加法的优化标签。一旦开启，它会调整 Mihomo 内部的内存分配策略，强行缩小并发时的缓存区大小和堆栈预留内存。
+路由器用途：极高。这是专为 RAM 只有 256MB 或 512MB 的路由器和 IoT 弱电设备量身定制的救命功能。

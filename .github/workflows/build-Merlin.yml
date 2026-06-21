@@ -1,1 +1,166 @@
+name: Build
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag version to release"
+        required: true
+  push:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - ".github/ISSUE_TEMPLATE/**"
+    branches:
+      - Meta
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - Meta
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+  
+env:
+  REGISTRY: docker.io
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jobs:
+          - { goos: linux, goarch: arm64, output: arm64 }
+          - { goos: linux, goarch: arm, goarm: '5', output: armv5 }
+          - { goos: linux, goarch: arm, goarm: '7', output: armv7 }
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Go
+      if: ${{ matrix.jobs.goversion == '' }}
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      with:
+        go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+        go-version: '1.26'
+
+    - name: Set up Go
+      if: ${{ matrix.jobs.goversion != '' && matrix.jobs.goversion != 'custom' }}
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      with:
+        go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+        go-version: ${{ matrix.jobs.goversion }}
+
+    - name: Set up Go1.26 loongarch abi1
+      if: ${{ matrix.jobs.goarch == 'loong64' && matrix.jobs.abi == '1' }}
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      with:
+        go-download-base-url: 'https://github.com/MetaCubeX/loongarch64-golang/releases/download/1.26.0'
+        go-version: 1.26.0
+
+    - name: Verify Go installation
+      run: go version
+
+    - name: Verify Go env
+      run: go env
+
+    - name: Set variables
+      run: |
+        VERSION="${GITHUB_REF_NAME,,}-$(git rev-parse --short HEAD)"
+        VERSION="${VERSION//\//-}"
+        PackageVersion="$(curl -s "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | jq -r '.tag_name' | sed 's/v//g' | awk -F '.' '{$NF = $NF + 1; print}' OFS='.').${VERSION/-/.}"
+        if [ -n "${{ github.event.inputs.version }}" ]; then
+          VERSION=${{ github.event.inputs.version }}
+          PackageVersion="${VERSION#v}"
+        fi
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
+        echo "PackageVersion=${PackageVersion}" >> $GITHUB_ENV
+      
+        echo "BUILDTIME=$(date)" >> $GITHUB_ENV
+        echo "CGO_ENABLED=0" >> $GITHUB_ENV
+        echo "BUILDTAG=-extldflags --static" >> $GITHUB_ENV
+        echo "GOTOOLCHAIN=local" >> $GITHUB_ENV
+
+    - name: Setup NDK
+      if: ${{ matrix.jobs.goos == 'android' }}
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r29-beta1
+
+    - name: Set NDK path
+      if: ${{ matrix.jobs.goos == 'android' }}
+      run: |
+        echo "CC=${{steps.setup-ndk.outputs.ndk-path}}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{matrix.jobs.ndk}}-clang" >> $GITHUB_ENV
+        echo "CGO_ENABLED=1" >> $GITHUB_ENV
+        echo "BUILDTAG=" >> $GITHUB_ENV
+
+    - name: Test
+      if: ${{ matrix.jobs.test == 'test' }}
+      run: |
+        export SKIP_CONCURRENT_TEST=1
+        go test ./...
+        echo "---test with_gvisor---"
+        go test ./... -tags "with_gvisor" -count=1
+
+    - name: Update CA
+      run: |
+        sudo apt-get update && sudo apt-get install ca-certificates
+        sudo update-ca-certificates
+        cp -f /etc/ssl/certs/ca-certificates.crt component/ca/ca-certificates.crt
+
+    - name: Build core
+      env:
+        GOOS: ${{matrix.jobs.goos}}
+        GOARCH: ${{matrix.jobs.goarch}}
+        GOAMD64: ${{matrix.jobs.goamd64}}
+        GO386: ${{matrix.jobs.go386}}
+        GOARM: ${{matrix.jobs.goarm}}
+        GOMIPS: ${{matrix.jobs.gomips}}
+      run: |
+        go env
+        sudo apt-get update && sudo apt-get install -y upx-ucl
+        go build -v -tags "with_low_memory,no_fake_tcp,no_tailscale" -trimpath -ldflags "${BUILDTAG} -X 'github.com/metacubex/mihomo/constant.Version=${VERSION}' -X 'github.com/metacubex/mihomo/constant.BuildTime=${BUILDTIME}' -w -s -buildid="
+        upx --best --lzma mihomo || true
+        mv mihomo mihomo-${{matrix.jobs.goos}}-${{matrix.jobs.output}}-${VERSION}
+
+    - name: Save version
+      run: |
+        echo ${VERSION} > version.txt
+      shell: bash
+
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: "${{ matrix.jobs.goos }}-${{ matrix.jobs.output }}"
+        path: |
+          mihomo-*
+          version.txt
+          checksums.txt
+
+  Upload-Release:
+    permissions: write-all
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: bin/
+          merge-multiple: true
+
+      - name: Delete current release assets
+        uses: 8Mi-Tech/delete-release-assets-action@main
+        continue-on-error: true
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.event.inputs.version }}
+          deleteOnlyFromDrafts: false
+  
+      - name: Upload Release
+        uses: softprops/action-gh-release@v3
+        if: ${{ success() }}
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          files: bin/*
+
 

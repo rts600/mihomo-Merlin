@@ -5,18 +5,7 @@ on:
       version:
         description: "Tag version to release"
         required: true
-  push:
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - ".github/ISSUE_TEMPLATE/**"
-    branches:
-      - Meta
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - Meta
+
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
